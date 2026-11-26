@@ -167,6 +167,12 @@ sealed class Output(bool json)
 
     public static string Describe(Result result, bool absolute)
     {
+        string path = absolute ? result.Path : Path.GetRelativePath(Environment.CurrentDirectory, result.Path);
+        return Clean($"{path} · {DescribeLocation(result)} · {result.Snippet}");
+    }
+
+    public static string DescribeLocation(Result result, bool details = true)
+    {
         Unit unit = result.Unit;
         string position = unit.Field switch
         {
@@ -176,17 +182,14 @@ sealed class Output(bool json)
             _ when unit.Paragraph is int paragraph => $"Absatz {paragraph}",
             _ => "Inhalt"
         };
-        string path = absolute ? result.Path : Path.GetRelativePath(Environment.CurrentDirectory, result.Path);
-        string section = unit.Section is null ? "" : $" · {unit.Section}";
+        string section = !details || unit.Section is null ? "" : $" · {unit.Section}";
         string scan = unit.Source == "ocr" ? " · Scan" : "";
         string kind = result.Hit.Rank switch
         {
-            1 => $" · Schreibvariante ({string.Join(", ", result.Hit.Words)})",
-            2 => $" · OCR-Variante ({string.Join(", ", result.Hit.Words)})",
-            3 => $" · Ähnlich ({string.Join(", ", result.Hit.Words)})",
-            _ => ""
+            1 => " · Schreibvariante", 2 => " · OCR-Variante", 3 => " · Ähnlich", _ => ""
         };
-        return Clean($"{path} · {position}{section}{scan}{kind} · {result.Snippet}");
+        string words = details && kind.Length > 0 ? $" ({string.Join(", ", result.Hit.Words)})" : "";
+        return $"{position}{section}{scan}{kind}{words}";
     }
 }
 

@@ -133,6 +133,12 @@ static class Picker
 
     internal static bool Open(Result result, Func<ProcessStartInfo, bool> startViewer)
     {
+        if (!File.Exists(result.Path))
+        {
+            Console.Error.WriteLine(Output.Clean($"Datei fehlt oder ist nicht zugänglich · {result.Path}"));
+            return false;
+        }
+
         if (result.Type == "pdf" && result.Unit.Page is int page)
         {
             string? configured = Environment.GetEnvironmentVariable("WRG_SUMATRA_PATH");
@@ -145,14 +151,24 @@ static class Picker
                 start.ArgumentList.Add("-page");
                 start.ArgumentList.Add(page.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 start.ArgumentList.Add(result.Path);
-                if (startViewer(start)) return true;
-                Console.Error.WriteLine("SumatraPDF konnte nicht gestartet werden. Dateizuordnung wird verwendet.");
+                if (startViewer(start))
+                {
+                    Console.WriteLine(Output.Clean($"An SumatraPDF übergeben · Seite {page} · {result.Path}"));
+                    return true;
+                }
+                Console.Error.WriteLine("SumatraPDF konnte nicht gestartet werden.");
             }
             else if (configured is not null)
-                Console.Error.WriteLine("WRG_SUMATRA_PATH muss auf eine vorhandene ausführbare Datei zeigen. Dateizuordnung wird verwendet.");
+                Console.Error.WriteLine("WRG_SUMATRA_PATH muss auf eine vorhandene ausführbare Datei zeigen.");
+            else
+                Console.Error.WriteLine("SumatraPDF wurde nicht gefunden. Installiere es für automatische PDF-Seitensprünge.");
+
+            Console.Error.WriteLine($"Öffne über die Windows-Dateizuordnung. Zielseite im PDF: {page}.");
         }
-        Console.WriteLine(Output.Describe(result, true));
-        return startViewer(new ProcessStartInfo(result.Path) { UseShellExecute = true, Verb = "open" });
+        if (!startViewer(new ProcessStartInfo(result.Path) { UseShellExecute = true, Verb = "open" }))
+            return false;
+        Console.WriteLine(Output.Clean($"An das Standardprogramm übergeben · {result.Path} · {Output.DescribeLocation(result)}"));
+        return true;
     }
 
     private static bool TryStart(ProcessStartInfo start)
@@ -169,8 +185,23 @@ static class Picker
         }
     }
 
-    private static string? FindSumatra() => (Environment.GetEnvironmentVariable("PATH") ?? "")
-        .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-        .Select(path => path.Trim('"')).Where(Path.IsPathFullyQualified)
-        .Select(path => Path.Combine(path, "SumatraPDF.exe")).FirstOrDefault(File.Exists);
+    private static string? FindSumatra()
+    {
+        var candidates = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => path.Trim('"')).Where(Path.IsPathFullyQualified)
+            .Select(path => Path.Combine(path, "SumatraPDF.exe"));
+
+        if (OperatingSystem.IsWindows())
+        {
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string[] folders = [local, Path.Combine(local, "Programs"),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)];
+            candidates = candidates.Concat(folders.Where(Path.IsPathFullyQualified)
+                .Select(folder => Path.Combine(folder, "SumatraPDF", "SumatraPDF.exe")));
+        }
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
 }

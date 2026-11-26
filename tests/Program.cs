@@ -111,6 +111,7 @@ try
     string fakeViewer = Path.Combine(root.FullName, "SumatraPDF.exe");
     File.WriteAllText(fakeViewer, "");
     string selectedPath = Path.Combine(sub, "Name mit Leerzeichen.pdf");
+    File.WriteAllText(selectedPath, "");
     var selectedResult = new Result(selectedPath, "pdf", DateTime.UtcNow,
         new Unit("", Page: 3), new Hit(0, 0, ["Zertifikat"], 0), "Das Zertifikat");
     string? previousViewer = Environment.GetEnvironmentVariable("WRG_SUMATRA_PATH");

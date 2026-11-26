@@ -119,12 +119,12 @@ try
     {
         Environment.SetEnvironmentVariable("WRG_SUMATRA_PATH", fakeViewer);
         var calls = new List<ProcessStartInfo>();
-        Require(Picker.Open(selectedResult, start => { calls.Add(start); return true; }), "SumatraPDF-Start");
+        Require(Picker.Open(selectedResult, start => { calls.Add(start); return true; }).Success, "SumatraPDF-Start");
         Require(calls.Single().FileName == fakeViewer &&
-            calls[0].ArgumentList.SequenceEqual(["-page", "3", selectedPath]) &&
+            calls[0].ArgumentList.SequenceEqual(["-new-window", "-page", "3", selectedPath]) &&
             !calls[0].UseShellExecute, "SumatraPDF-Seitensprung mit vollständigem Pfad");
         calls.Clear();
-        Require(Picker.Open(selectedResult, start => { calls.Add(start); return start.UseShellExecute; }),
+        Require(Picker.Open(selectedResult, start => { calls.Add(start); return start.UseShellExecute; }).Success,
             "Rückfall auf Dateizuordnung");
         Require(calls.Count == 2 && calls[1].FileName == selectedPath &&
             calls[1].UseShellExecute, "Dateizuordnung für ausgewählten Treffer");

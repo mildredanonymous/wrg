@@ -11,7 +11,7 @@ Windows-11-Kommandozeile für die lokale Stichwortsuche in TXT, Markdown, DOCX u
 
 Mehrere Suchbegriffe stehen in einem PowerShell-Argument. Standardmässig müssen alle in derselben Zeile, demselben Absatz, derselben Tabellenzelle, derselben PDF-Seite oder demselben Metadatenfeld vorkommen. `--phrase` sucht die ganze Wortfolge. `--exact` schaltet Tippfehler- und Schreibvarianten ab. Ohne Pfad beginnt die Suche im aktuellen Ordner.
 
-In der Trefferliste wählen Auf/Ab den Treffer, Enter öffnet das Original und Esc beendet die Auswahl. Für einen PDF-Seitensprung sucht `wrg` nach `SumatraPDF.exe` auf `PATH` und in den üblichen Windows-Installationsordnern. Mit `WRG_SUMATRA_PATH` kannst du den vollständigen Pfad zur EXE vorgeben. Die Windows-Dateizuordnung öffnet das Dokument alternativ und `wrg` zeigt die Zielseite im Terminal an.
+In der Trefferliste wählen Auf/Ab den Treffer. Enter öffnet das Original und lässt die Liste aktiv. Mit SumatraPDF ab 3.2 bekommt jeder PDF-Seitensprung ein eigenes Fenster. Esc beendet die Auswahl. Geöffnete Dokumente bleiben im Viewer offen. Für einen PDF-Seitensprung sucht `wrg` nach `SumatraPDF.exe` auf `PATH` und in den üblichen Windows-Installationsordnern. Mit `WRG_SUMATRA_PATH` kannst du den vollständigen Pfad zur EXE vorgeben. Die Windows-Dateizuordnung öffnet das Dokument alternativ und `wrg` zeigt die Zielseite im Terminal an.
 
 ## In grossen Ordnern suchen
 

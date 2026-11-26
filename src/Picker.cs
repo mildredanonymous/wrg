@@ -8,7 +8,8 @@ static class Picker
     public static bool Select(Result[] hits, CancellationToken cancellation)
     {
         int index = 0;
-        bool open = false;
+        bool allOpened = true;
+        string? status = null;
         bool alternateScreen = TryEnableTerminal(out IntPtr handle, out uint originalMode);
         try
         {
@@ -24,7 +25,7 @@ static class Picker
                 {
                     width = currentWidth;
                     height = currentHeight;
-                    string view = Render(hits, index, width, height);
+                    string view = Render(hits, index, width, height, status);
                     if (alternateScreen) Console.Write("\x1b[H\x1b[J" + view);
                     else
                     {
@@ -40,10 +41,14 @@ static class Picker
                 }
 
                 ConsoleKey key = Console.ReadKey(intercept: true).Key;
-                if (key is ConsoleKey.Enter or ConsoleKey.Escape)
+                if (key == ConsoleKey.Escape) return allOpened;
+                if (key == ConsoleKey.Enter)
                 {
-                    open = key == ConsoleKey.Enter;
-                    break;
+                    var opened = Open(hits[index], StartViewer);
+                    status = opened.Message;
+                    allOpened &= opened.Success;
+                    changed = true;
+                    continue;
                 }
                 int next = key switch
                 {
@@ -52,6 +57,7 @@ static class Picker
                     _ => index
                 };
                 changed = index != next;
+                if (changed) status = null;
                 index = next;
             }
         }
@@ -60,15 +66,15 @@ static class Picker
             if (alternateScreen) Console.Write("\x1b[?25h\x1b[?1049l");
             if (handle != IntPtr.Zero) SetConsoleMode(handle, originalMode);
         }
-        return !open || Open(hits[index], TryStart);
     }
 
-    internal static string Render(Result[] hits, int index, int width, int height)
+    internal static string Render(Result[] hits, int index, int width, int height, string? status = null)
     {
         int columns = Math.Max(1, width - 1);
         int rows = Math.Max(1, height);
         var lines = new List<string> { $"Treffer {index + 1}/{hits.Length}    ↑/↓ wählen · Enter öffnen · Esc schliessen" };
-        int count = Math.Min(hits.Length, Math.Clamp(rows - 7, 1, 5));
+        if (status is not null) lines.Add(status);
+        int count = Math.Min(hits.Length, Math.Clamp(rows - 6 - lines.Count, 1, 5));
         int first = Math.Clamp(index - count / 2, 0, hits.Length - count);
         for (int i = first; i < first + count; i++)
             lines.Add($"{(i == index ? ">" : " ")} {Output.DescribeLocation(hits[i], false)} · {Path.GetFileName(hits[i].Path)}");
@@ -131,14 +137,13 @@ static class Picker
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetConsoleMode(IntPtr handle, uint mode);
 
-    internal static bool Open(Result result, Func<ProcessStartInfo, bool> startViewer)
+    internal static (bool Success, string Message) Open(Result result, Func<ProcessStartInfo, bool> startViewer)
     {
         if (!File.Exists(result.Path))
-        {
-            Console.Error.WriteLine(Output.Clean($"Datei fehlt oder ist nicht zugänglich · {result.Path}"));
-            return false;
-        }
+            return (false, $"Datei fehlt oder ist nicht zugänglich · {result.Path}");
 
+        string location = Output.DescribeLocation(result, details: false);
+        string fallback = "";
         if (result.Type == "pdf" && result.Unit.Page is int page)
         {
             string? configured = Environment.GetEnvironmentVariable("WRG_SUMATRA_PATH");
@@ -148,41 +153,37 @@ static class Picker
             if (sumatra is not null)
             {
                 var start = new ProcessStartInfo(sumatra) { UseShellExecute = false };
+                start.ArgumentList.Add("-new-window");
                 start.ArgumentList.Add("-page");
                 start.ArgumentList.Add(page.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 start.ArgumentList.Add(result.Path);
-                if (startViewer(start))
-                {
-                    Console.WriteLine(Output.Clean($"An SumatraPDF übergeben · Seite {page} · {result.Path}"));
-                    return true;
-                }
-                Console.Error.WriteLine("SumatraPDF konnte nicht gestartet werden.");
+                string? error = TryStart(start);
+                if (error is null) return (true, $"An SumatraPDF übergeben · {location}");
+                fallback = $" · SumatraPDF: {error}";
             }
-            else if (configured is not null)
-                Console.Error.WriteLine("WRG_SUMATRA_PATH muss auf eine vorhandene ausführbare Datei zeigen.");
             else
-                Console.Error.WriteLine("SumatraPDF wurde nicht gefunden. Installiere es für automatische PDF-Seitensprünge.");
-
-            Console.Error.WriteLine($"Öffne über die Windows-Dateizuordnung. Zielseite im PDF: {page}.");
+                fallback = configured is null ? " · SumatraPDF fehlt" : " · WRG_SUMATRA_PATH ungültig";
         }
-        if (!startViewer(new ProcessStartInfo(result.Path) { UseShellExecute = true, Verb = "open" }))
-            return false;
-        Console.WriteLine(Output.Clean($"An das Standardprogramm übergeben · {result.Path} · {Output.DescribeLocation(result)}"));
-        return true;
+
+        string? shellError = TryStart(new ProcessStartInfo(result.Path) { UseShellExecute = true, Verb = "open" });
+        return shellError is null
+            ? (true, $"An Standardprogramm übergeben · Ziel: {location}{fallback}")
+            : (false, $"Öffnen fehlgeschlagen · {shellError}{fallback}");
+
+        string? TryStart(ProcessStartInfo start)
+        {
+            try { return startViewer(start) ? null : "Programm konnte nicht gestartet werden."; }
+            catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException)
+            {
+                return error.Message;
+            }
+        }
     }
 
-    private static bool TryStart(ProcessStartInfo start)
+    private static bool StartViewer(ProcessStartInfo start)
     {
-        try
-        {
-            using Process? process = Process.Start(start);
-            return process is not null || start.UseShellExecute;
-        }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException or IOException)
-        {
-            Console.Error.WriteLine(Output.Clean(error.Message));
-            return false;
-        }
+        using Process? process = Process.Start(start);
+        return process is not null || start.UseShellExecute;
     }
 
     private static string? FindSumatra()

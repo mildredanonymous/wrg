@@ -63,7 +63,7 @@ static int Run(string[] args)
         {
             if (!Picker.Select(hits, cancellation.Token))
             {
-                output.Issue("open_failed", "Das Original konnte nicht geöffnet werden.");
+                output.Issue("open_failed", "Mindestens ein Öffnungsversuch ist fehlgeschlagen.");
                 return output.Finish("failed", 2);
             }
         }

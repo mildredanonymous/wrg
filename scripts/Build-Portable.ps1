@@ -10,6 +10,7 @@ $package = Join-Path $temp 'wrg-win-x64'
 
 function Get-PinnedFile($Uri, $Name, $Hash) {
     $path = Join-Path $temp $Name
+    $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $path
     if ((Get-FileHash -Algorithm SHA256 -Path $path).Hash -ne $Hash) {
         throw "SHA-256-Prüfung fehlgeschlagen für $Name."

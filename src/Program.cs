@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security;
 using System.Text;
 using System.Text.Json;
@@ -31,10 +32,13 @@ static int Run(string[] args)
               --type pdf|docx|md|txt             Dateityp (wiederholbar)
               --modified-since YYYY-MM-DD       Ab lokaler Mitternacht
               --exclude-word WORT               Einheiten mit diesem Wort ausschliessen
+              --exclude-dir NAME                Unterordner nach Namen auslassen (wiederholbar)
               --no-recursion                    Nur direkt enthaltene Dateien prüfen
               --no-ocr                          Texterkennung abschalten
               --ocr-cache                       Erkannten Scan-Text lokal speichern
               --stream                          Texttreffer sofort ausgeben
+              --files-only                      Je passender Datei einen absoluten Pfad ausgeben
+              --timing                          Suchzeiten und OCR-Zähler auf stderr anzeigen
               --interactive                     Treffer wählen und Original öffnen
               --format text|jsonl               Ausgabeformat
               --verbose                         Absolute Pfade und Abdeckung anzeigen
@@ -58,7 +62,9 @@ static int Run(string[] args)
             return output.Finish("failed", 2);
         }
         var scanner = new Scanner(options, output, cancellation.Token);
-        scanner.Scan();
+        output.BeginSearch();
+        try { scanner.Scan(); }
+        finally { output.EndSearch(); }
         cancellation.Token.ThrowIfCancellationRequested();
         var hits = output.Sorted();
         if (options.Interactive && hits.Length > 0)
@@ -102,13 +108,35 @@ sealed class Output(bool json)
         Console.WriteLine(JsonSerializer.Serialize(record));
     }
 
-    private bool stream, verbose;
+    private bool stream, verbose, timing;
+    private HashSet<string>? matchingPaths;
+    private Stopwatch? elapsed;
+    private TimeSpan? firstMatch;
+    private int ocrAttempts, ocrCacheHits;
 
     public void Start(Options options)
     {
         stream = options.Stream;
         verbose = options.Verbose;
+        timing = options.Timing;
+        if (options.FilesOnly)
+            matchingPaths = new HashSet<string>(OperatingSystem.IsWindows()
+                ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         if (json) Write("start", new { query = options.Query, paths = options.Paths, mode = options.Mode });
+    }
+
+    public void BeginSearch()
+    {
+        if (timing) elapsed = Stopwatch.StartNew();
+    }
+
+    public void EndSearch() => elapsed?.Stop();
+
+    public void CountOcr(bool fromCache)
+    {
+        if (!timing) return;
+        if (fromCache) Interlocked.Increment(ref ocrCacheHits);
+        else Interlocked.Increment(ref ocrAttempts);
     }
 
     private long? lastProgress;
@@ -125,6 +153,16 @@ sealed class Output(bool json)
 
     public void Match(Result result)
     {
+        if (elapsed is not null) firstMatch ??= elapsed.Elapsed;
+        if (matchingPaths is not null)
+        {
+            if (!matchingPaths.Add(result.Path)) return;
+            Matches++;
+            Console.WriteLine(result.Path);
+            Console.Out.Flush();
+            return;
+        }
+
         Matches++;
         if (!json)
         {
@@ -167,7 +205,9 @@ sealed class Output(bool json)
     {
         if (!json)
         {
-            string count = Matches == 1 ? "1 Treffer" : $"{Matches} Treffer";
+            string count = matchingPaths is null
+                ? (Matches == 1 ? "1 Treffer" : $"{Matches} Treffer")
+                : (Matches == 1 ? "1 passende Datei" : $"{Matches} passende Dateien");
             Console.Error.WriteLine($"{count} · {Searched} Dateien durchsucht" + (Gap ? " · Suche mit Lücken" : ""));
             if (verbose || Gap)
                 Console.Error.WriteLine($"Dateien: {Skipped} übersprungen, {Excluded} ausgeschlossen. Seiten: {PagesSkipped} übersprungen, {PagesExcluded} ausgeschlossen.");
@@ -178,6 +218,12 @@ sealed class Output(bool json)
 
     public int Finish(string status, int exitCode)
     {
+        if (elapsed is not null)
+        {
+            string first = firstMatch is TimeSpan found ? $"{found.TotalSeconds:0.000} s" : "kein Treffer";
+            Console.Error.WriteLine($"Zeit · erster Treffer: {first} · Suche: {elapsed.Elapsed.TotalSeconds:0.000} s");
+            Console.Error.WriteLine($"OCR · Tesseract-Aufrufe: {ocrAttempts} · Seiten aus dem Cache: {ocrCacheHits}");
+        }
         if (json) Write("summary", new
         {
             status, exit_code = exitCode, matches = Matches, files_searched = Searched,
@@ -282,7 +328,7 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             Unit? unit = null;
             bool unchanged = Unchanged();
             if (unchanged)
-                unit = Documents.RecognizePdfPage(path, page, issues.Add, ocrCache, workerCancellation);
+                unit = Documents.RecognizePdfPage(path, page, issues.Add, ocrCache, output.CountOcr, workerCancellation);
             if (!unchanged || !Unchanged())
             {
                 unit = null;
@@ -342,7 +388,8 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 continue;
             }
             bool directory = attributes.HasFlag(FileAttributes.Directory);
-            if (directory && !explicitPath && options.NoRecursion) continue;
+            if (directory && !explicitPath && (options.NoRecursion ||
+                options.ExcludedDirectories.Contains(Path.GetFileName(path)))) continue;
             if (Blocked(attributes))
             {
                 if (!visited.Add(path)) continue;

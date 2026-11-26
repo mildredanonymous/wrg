@@ -165,18 +165,57 @@ try
             calls[1].UseShellExecute, "Dateizuordnung für ausgewählten Treffer");
     }
     finally { Environment.SetEnvironmentVariable("WRG_SUMATRA_PATH", previousViewer); }
+    string pipeline = Path.Combine(root.FullName, "Pipeline");
+    string archive = Directory.CreateDirectory(Path.Combine(pipeline, "Archiv")).FullName;
+    string backups = Directory.CreateDirectory(Path.Combine(pipeline, "Alte Backups", "Tiefe")).FullName;
+    string retained = Directory.CreateDirectory(Path.Combine(pipeline, "Archiviert")).FullName;
+    string keptFile = Path.Combine(retained, "Verträge.txt");
+    File.WriteAllText(keptFile, "Suchwort erstes Vorkommen\nSuchwort zweites Vorkommen");
+    string excludedFile = Path.Combine(archive, "Alt.txt");
+    File.WriteAllText(excludedFile, "Suchwort");
+    File.WriteAllText(Path.Combine(backups, "Alt.txt"), "Suchwort");
+    var pipelineOutput = Capture(0, "--files-only", "--timing", "--exclude-dir", "archiv",
+        "--exclude-dir", "Alte Backups", "--exact", "Suchwort", pipeline);
+    Require(pipelineOutput.Stdout == keptFile + Environment.NewLine,
+        "Pipeline liefert je Datei genau einen unveränderten absoluten Pfad");
+    Require(pipelineOutput.Stderr.Contains("erster Treffer:") && pipelineOutput.Stderr.Contains("Tesseract-Aufrufe: 0"),
+        "Zeit und OCR-Statistik stehen auf stderr");
+    Require(Run(0, "--files-only", "--exclude-dir", "Archiv", "--exact", "Suchwort", archive) ==
+        excludedFile + Environment.NewLine, "Explizit angegebener Suchordner bleibt Startpunkt");
+    var noMatch = Capture(1, "--files-only", "--timing", "--exact", "KeinTreffer", pipeline);
+    Require(noMatch.Stdout.Length == 0 && noMatch.Stderr.Contains("erster Treffer: kein Treffer"),
+        "Leere Pipeline und Timing ohne Treffer");
+    Require(Capture(2, "--exclude-dir", "Archiv/Alt", "Suchwort").Stderr.Contains("Ordnernamen"),
+        "Ordnerausschluss erwartet einen einzelnen Namen");
+    Require(Run(2, "--files-only", "--interactive", "Suchwort") == "",
+        "Dateipfade und interaktive Trefferliste sind unvereinbar");
+    Json(2, "--files-only", "Suchwort");
+    if (args.Length >= 2)
+    {
+        var withOcr = Capture(0, "--format", "jsonl", "--timing", "--exact", "Zertifikat", Path.GetFullPath(args[1]));
+        Require(withOcr.Stderr.Contains("Tesseract-Aufrufe: 2") && withOcr.Stderr.Contains("Seiten aus dem Cache: 0"),
+            "OCR-Statistik zählt die tatsächlich angestossenen Erkennungen");
+        Require(withOcr.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).All(line =>
+        {
+            using var doc = JsonDocument.Parse(line);
+            return doc.RootElement.TryGetProperty("type", out _);
+        }), "Timing lässt JSONL auf stdout maschinenlesbar");
+    }
     Console.WriteLine("Alle ausgeführten Smoke-Tests bestanden.");
 }
 finally { root.Delete(recursive: true); }
 
-string Run(int expected, params string[] arguments)
+string Run(int expected, params string[] arguments) => Capture(expected, arguments).Stdout;
+
+(string Stdout, string Stderr) Capture(int expected, params string[] arguments)
 {
     bool dll = application.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
     var start = new ProcessStartInfo(dll ? "dotnet" : application)
     {
         WorkingDirectory = root.FullName, UseShellExecute = false,
         RedirectStandardOutput = true, RedirectStandardError = true,
-        StandardOutputEncoding = new UTF8Encoding(false, true)
+        StandardOutputEncoding = new UTF8Encoding(false, true),
+        StandardErrorEncoding = new UTF8Encoding(false, true)
     };
     if (dll) start.ArgumentList.Add(application);
     foreach (string arg in arguments) start.ArgumentList.Add(arg);
@@ -190,7 +229,7 @@ string Run(int expected, params string[] arguments)
     }
     Require(process.ExitCode == expected,
         $"Exitcode {process.ExitCode}, erwartet {expected}: {string.Join(" ", arguments)}\n{stderr.Result}\n{stdout.Result}");
-    return stdout.Result;
+    return (stdout.Result, stderr.Result);
 }
 
 JsonElement[] Json(int expected, params string[] arguments)

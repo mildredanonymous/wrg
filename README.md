@@ -28,6 +28,19 @@ wrg --field content --stream --ocr-cache 'Kündigungsfrist'
 
 `--ocr-cache` speichert erkannten Scan-Text im Klartext unter `%LOCALAPPDATA%\wrg\ocr-v1` und ist pro Aufruf aktiv. Der Cache verwendet einen Fingerabdruck des gerenderten Bildes, der OCR-Engine und der Sprachmodelle. Er kann auch identische Bilder in verschiedenen PDFs wiederverwenden. Die PDF-Seite wird weiterhin gerendert. Der Platzbedarf der Einträge ist auf 256 MiB begrenzt. Der Cache-Ordner kann zum Leeren gelöscht werden. Unter Linux braucht der Cache für eine systemweite Tesseract-Installation einen gesetzten `TESSDATA_PREFIX` mit den verwendeten Sprachmodellen.
 
+### Pfade ausgeben, Ordner auslassen und Suchzeit messen
+
+```powershell
+wrg --field content --files-only marti
+wrg --field content --exclude-dir Archiv --exclude-dir 'Alte Backups' --timing marti
+```
+
+`--files-only` gibt pro passender Datei genau einen absoluten Pfad auf stdout aus, sobald der erste Treffer in dieser Datei vorliegt. Meldungen erscheinen auf stderr. Für Daten wie die PDF-Seite und den Textausschnitt gibt es `--format jsonl`.
+
+`--exclude-dir` nimmt einen Ordnernamen ohne Pfad oder Platzhalter an und kann mehrfach gesetzt werden. Gross- und Kleinschreibung spielen dabei keine Rolle. Ein passender Unterordner und sein gesamter Inhalt werden ausgelassen. Ein direkt angegebener Suchpfad dient weiterhin als Startpunkt.
+
+`--timing` meldet auf stderr die Zeit bis zum ersten gefundenen Treffer, die gesamte Suchzeit sowie die Anzahl der Tesseract-Aufrufe und der OCR-Seiten aus dem Cache. Die Messung endet mit Abschluss der Suche, auch bei interaktiver Ausgabe.
+
 ## Build und Prüfung
 
 Für den Build werden das in `global.json` fixierte .NET SDK, Windows PowerShell 5.1 oder PowerShell 7, 7-Zip mit NSIS-Unterstützung sowie Internetzugang zum Abruf der festgelegten Komponenten benötigt.

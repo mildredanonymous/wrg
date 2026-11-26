@@ -3,12 +3,13 @@ using System.Globalization;
 sealed class Options
 {
     public string Query { get; private set; } = "";
-    public bool Exact, Phrase, NoRecursion, NoOcr, Interactive, Verbose, Help, Version, Stream, OcrCache;
+    public bool Exact, Phrase, NoRecursion, NoOcr, Interactive, Verbose, Help, Version, Stream, OcrCache, FilesOnly, Timing;
     public string Field = "all", Format = "text";
     public DateTime? Since;
     public List<string> Paths { get; } = [];
     public HashSet<string> Types { get; } = [];
     public List<string> Excludes { get; } = [];
+    public HashSet<string> ExcludedDirectories { get; } = new(StringComparer.OrdinalIgnoreCase);
     public string Mode => Phrase ? "phrase" : Exact ? "exact" : "default";
 
     public static Options Parse(string[] args)
@@ -37,7 +38,7 @@ sealed class Options
                 string value = args[i];
                 if (allowed.Length != 0 && !allowed.Contains(value))
                     throw new ArgumentException($"Ungültiger Wert für {arg}: {value}.");
-                if (arg is not ("--type" or "--exclude-word") &&
+                if (arg is not ("--type" or "--exclude-word" or "--exclude-dir") &&
                     values.TryGetValue(arg, out string? first) && first != value)
                     throw new ArgumentException($"Widersprüchliche Werte für {arg}.");
                 values[arg] = value;
@@ -63,6 +64,15 @@ sealed class Options
                         throw new ArgumentException("--exclude-word erwartet ein ganzes Wort.");
                     result.Excludes.Add(excluded);
                     break;
+                case "--exclude-dir":
+                    string directory = Value();
+                    if (string.IsNullOrWhiteSpace(directory) || directory is "." or ".." ||
+                        directory.IndexOfAny(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) >= 0)
+                        throw new ArgumentException("--exclude-dir erwartet einen Ordnernamen ohne Pfad oder Platzhalter.");
+                    result.ExcludedDirectories.Add(directory);
+                    break;
+                case "--files-only": result.FilesOnly = true; break;
+                case "--timing": result.Timing = true; break;
                 case "--no-recursion": result.NoRecursion = true; break;
                 case "--no-ocr": result.NoOcr = true; break;
                 case "--ocr-cache": result.OcrCache = true; break;
@@ -77,6 +87,8 @@ sealed class Options
             throw new ArgumentException("--interactive und --format jsonl sind nicht kombinierbar.");
         if (result.Interactive && result.Stream)
             throw new ArgumentException("--interactive und --stream sind nicht kombinierbar.");
+        if (result.FilesOnly && (result.Interactive || result.Format == "jsonl"))
+            throw new ArgumentException("--files-only ist nur mit der Textausgabe kombinierbar.");
         if (result.Help || result.Version) return result;
         if (positionals.Count == 0 || string.IsNullOrWhiteSpace(positionals[0]))
             throw new ArgumentException("Ein Suchtext ist erforderlich.");

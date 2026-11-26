@@ -149,7 +149,7 @@ static partial class Documents
     }
 
     public static Unit? RecognizePdfPage(string path, int page, Action<DocumentIssue> issue,
-        OcrCache? cache, CancellationToken cancellation)
+        OcrCache? cache, Action<bool> countOcr, CancellationToken cancellation)
     {
         string[] range = Range(page, page);
         string? recognized = null;
@@ -165,6 +165,7 @@ static partial class Documents
             string image = prefix + ".png";
             string? key = cache?.Key(image);
             recognized = cache?.Read(key);
+            countOcr(recognized is not null);
             if (recognized is null)
             {
                 var ocr = RunTool("tesseract", [image, "stdout", "-l", "deu+eng", .. languageData], 45, cancellation);

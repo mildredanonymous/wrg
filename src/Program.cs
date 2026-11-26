@@ -33,6 +33,8 @@ static int Run(string[] args)
               --exclude-word WORT               Einheiten mit diesem Wort ausschliessen
               --no-recursion                    Nur direkt enthaltene Dateien prüfen
               --no-ocr                          Texterkennung abschalten
+              --ocr-cache                       Erkannten Scan-Text lokal speichern
+              --stream                          Texttreffer sofort ausgeben
               --interactive                     Treffer wählen und Original öffnen
               --format text|jsonl               Ausgabeformat
               --verbose                         Absolute Pfade und Abdeckung anzeigen
@@ -100,8 +102,12 @@ sealed class Output(bool json)
         Console.WriteLine(JsonSerializer.Serialize(record));
     }
 
+    private bool stream, verbose;
+
     public void Start(Options options)
     {
+        stream = options.Stream;
+        verbose = options.Verbose;
         if (json) Write("start", new { query = options.Query, paths = options.Paths, mode = options.Mode });
     }
 
@@ -122,7 +128,13 @@ sealed class Output(bool json)
         Matches++;
         if (!json)
         {
-            results.Add(result);
+            if (stream)
+            {
+                if (Matches > 1) Console.WriteLine();
+                Console.WriteLine(Describe(result, verbose));
+                Console.Out.Flush();
+            }
+            else results.Add(result);
             return;
         }
         Unit unit = result.Unit;
@@ -216,14 +228,75 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
     private readonly HashSet<string> visited = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> directories = new(StringComparer.OrdinalIgnoreCase);
     private readonly Search search = new(options);
+    private readonly Queue<Task<Action>> pendingOcr = new();
+    private readonly OcrCache? ocrCache = options.OcrCache && !options.NoOcr ? new OcrCache() : null;
+    private CancellationToken workerCancellation;
 
     public void Scan()
     {
-        foreach (string path in options.Paths)
+        using var worker = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        workerCancellation = worker.Token;
+        try
         {
-            cancellation.ThrowIfCancellationRequested();
-            Walk(path, true);
+            foreach (string path in options.Paths)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                Walk(path, true);
+            }
+            while (pendingOcr.Count > 0) CollectOcr(wait: true);
         }
+        finally
+        {
+            worker.Cancel();
+            while (pendingOcr.TryDequeue(out Task<Action>? job))
+            {
+                try { job.GetAwaiter().GetResult(); }
+                catch (OperationCanceledException) { }
+            }
+        }
+    }
+
+    private void CollectOcr(bool wait = false)
+    {
+        while (pendingOcr.TryPeek(out Task<Action>? job) && (wait || job.IsCompleted))
+        {
+            pendingOcr.Dequeue();
+            job.GetAwaiter().GetResult()();
+            wait = false;
+        }
+    }
+
+    private void QueueOcr(string path, int page, DateTime modified, long length,
+        Action<Unit?, List<DocumentIssue>> complete)
+    {
+        const int maxPending = 64;
+        CollectOcr(wait: pendingOcr.Count >= maxPending);
+        Task<Action>? previous = pendingOcr.Count > 0 ? pendingOcr.Last() : null;
+        pendingOcr.Enqueue(Task.Run(async () =>
+        {
+            if (previous is not null)
+                await ((Task)previous).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            workerCancellation.ThrowIfCancellationRequested();
+            var issues = new List<DocumentIssue>();
+            Unit? unit = null;
+            bool unchanged = Unchanged();
+            if (unchanged)
+                unit = Documents.RecognizePdfPage(path, page, issues.Add, ocrCache, workerCancellation);
+            if (!unchanged || !Unchanged())
+            {
+                unit = null;
+                issues.Add(new("parse_failed", "PDF wurde während der Suche geändert oder entfernt.", page));
+            }
+            return (Action)(() => complete(unit, issues));
+
+            bool Unchanged()
+            {
+                var current = new FileInfo(path);
+                try { return current.Exists && current.LastWriteTimeUtc == modified && current.Length == length; }
+                catch (IOException) { return false; }
+                catch (UnauthorizedAccessException) { return false; }
+            }
+        }));
     }
 
     private void Walk(string path, bool explicitPath)
@@ -283,6 +356,7 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             if (!directory)
             {
                 ScanFile(path, explicitPath);
+                CollectOcr();
                 continue;
             }
             if (!directories.Add(Path.TrimEndingDirectorySeparator(path))) continue;
@@ -357,7 +431,18 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             return;
         }
         bool checkedUnit = false, gap = false;
-        bool excluded = false;
+        bool excluded = false, scanFinished = false, excludedPage = false;
+        int pending = 0;
+        void FinishFile()
+        {
+            if (!scanFinished || pending != 0) return;
+            if (checkedUnit || (!gap && !excluded && !excludedPage &&
+                options.Field is "all" or "content" && !cancellation.IsCancellationRequested))
+                output.Searched++;
+            else if (gap) output.Skipped++;
+            else if (!excluded && !cancellation.IsCancellationRequested) output.CheckedInput = true;
+        }
+
         try
         {
             var info = new FileInfo(path);
@@ -376,13 +461,13 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 if (pendingPage is not null) output.Match(pendingPage);
                 pendingPage = null;
             }
-            void Check(Unit unit)
+            Result? Find(Unit unit)
             {
                 cancellation.ThrowIfCancellationRequested();
-                if (options.Field != "all" && options.Field != unit.Field) return;
+                if (options.Field != "all" && options.Field != unit.Field) return null;
                 checkedUnit = true;
                 Hit? hit = search.Find(unit, cancellation);
-                if (hit is null) return;
+                if (hit is null) return null;
                 string text = unit.Text;
                 int start = Math.Max(hit.Offset - 65, 0);
                 int end = Math.Min(text.Length, start + 180);
@@ -394,28 +479,46 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 int? line = unit.Line;
                 if (type == "md" && line is not null)
                     line += text.AsSpan(0, hit.Offset).Count('\n');
-                var result = new Result(path, type, modified, unit with { Text = "", Line = line }, hit, snippet);
+                return new Result(path, type, modified, unit with { Text = "", Line = line }, hit, snippet);
+            }
+            void Check(Unit unit)
+            {
+                Result? result = Find(unit);
+                if (result is null) return;
                 if (unit.Page is null) output.Match(result);
-                else if (pendingPage is null ||
-                    (hit.Rank, hit.Distance).CompareTo((pendingPage.Hit.Rank, pendingPage.Hit.Distance)) < 0)
-                    pendingPage = result;
+                else pendingPage = Better(pendingPage, result);
+            }
+            void OnIssue(DocumentIssue issue)
+            {
+                gap = true;
+                Report(issue.Code, issue.Message, path, issue.Page);
+            }
+            void ScheduleOcr(int page)
+            {
+                Result? textHit = pendingPage;
+                pendingPage = null;
+                QueueOcr(path, page, modified, info.Length, (unit, issues) =>
+                {
+                    foreach (DocumentIssue issue in issues) OnIssue(issue);
+                    Result? hit = Better(textHit, unit is null ? null : Find(unit));
+                    if (hit is not null) output.Match(hit);
+                    pending--;
+                    FinishFile();
+                });
+                pending++;
             }
             if (options.Field is "all" or "filename" && type != "pdf")
                 Check(new Unit(info.Name, "filename", "metadata"));
             if (options.Field == "filename" && type != "pdf") return;
             if (info.Length > Documents.FileLimit) throw new InvalidDataException("Datei überschreitet 256 MiB.");
-            bool excludedPage = false;
-            foreach (Unit unit in Documents.Read(path, type, options, issue =>
-            {
-                gap = true;
-                Report(issue.Code, issue.Message, path, issue.Page);
-            }, () => { output.PagesExcluded++; excludedPage = true; }, FlushPage,
+            foreach (Unit unit in Documents.Read(path, type, options, OnIssue,
+                () => { output.PagesExcluded++; excludedPage = true; }, FlushPage,
                 page =>
                 {
+                    CollectOcr();
                     if (options.Interactive || options.Verbose) output.Progress(path, page);
-                }, cancellation))
+                }, ScheduleOcr, cancellation))
                 Check(unit);
-            if (!gap && !excludedPage && options.Field is "all" or "content") checkedUnit = true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or
             SecurityException or InvalidDataException or DecoderFallbackException or XmlException)
@@ -425,9 +528,16 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
         }
         finally
         {
-            if (checkedUnit) output.Searched++;
-            else if (gap) output.Skipped++;
-            else if (!excluded && !cancellation.IsCancellationRequested) output.CheckedInput = true;
+            scanFinished = true;
+            FinishFile();
         }
+    }
+
+    private static Result? Better(Result? first, Result? second)
+    {
+        if (first is null) return second;
+        if (second is null) return first;
+        return (first.Hit.Rank, first.Hit.Distance).CompareTo((second.Hit.Rank, second.Hit.Distance)) <= 0
+            ? first : second;
     }
 }

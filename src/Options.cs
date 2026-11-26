@@ -3,7 +3,7 @@ using System.Globalization;
 sealed class Options
 {
     public string Query { get; private set; } = "";
-    public bool Exact, Phrase, NoRecursion, NoOcr, Interactive, Verbose, Help, Version;
+    public bool Exact, Phrase, NoRecursion, NoOcr, Interactive, Verbose, Help, Version, Stream, OcrCache;
     public string Field = "all", Format = "text";
     public DateTime? Since;
     public List<string> Paths { get; } = [];
@@ -65,6 +65,8 @@ sealed class Options
                     break;
                 case "--no-recursion": result.NoRecursion = true; break;
                 case "--no-ocr": result.NoOcr = true; break;
+                case "--ocr-cache": result.OcrCache = true; break;
+                case "--stream": result.Stream = true; break;
                 case "--interactive": result.Interactive = true; break;
                 case "--verbose": result.Verbose = true; break;
                 case "--format": result.Format = Value("text", "jsonl"); break;
@@ -73,6 +75,8 @@ sealed class Options
         }
         if (result.Interactive && result.Format == "jsonl")
             throw new ArgumentException("--interactive und --format jsonl sind nicht kombinierbar.");
+        if (result.Interactive && result.Stream)
+            throw new ArgumentException("--interactive und --stream sind nicht kombinierbar.");
         if (result.Help || result.Version) return result;
         if (positionals.Count == 0 || string.IsNullOrWhiteSpace(positionals[0]))
             throw new ArgumentException("Ein Suchtext ist erforderlich.");

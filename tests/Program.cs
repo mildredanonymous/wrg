@@ -52,6 +52,10 @@ try
     Require(Run(0, "--version").StartsWith("wrg "), "Version");
     Require(Run(0, "--exact", "--", "TLS-ID", txt).Contains("Zeile 1"), "Optionsende und UTF-16 BE");
     Require(Run(1, "TLS", root.FullName, "--type", "docx", "--no-recursion") == "", "Keine Rekursion");
+    Require(Run(0, "Zertifikat", "--exact", "--stream", txt).Contains("Zeile 1"),
+        "Fortlaufende Textausgabe enthält den Treffer");
+    Require(Run(2, "Zertifikat", "--stream", "--interactive") == "",
+        "Fortlaufende Textausgabe und Trefferliste schliessen sich aus");
     Require(Run(0, "Zertifikat", "--exact").Contains("Verträge 2026.TXT"), "Aktueller Ordner");
     var found = Json(0, "TLS Zertifikat", txt, root.FullName, "--exact");
     Require(found.Count(r => Kind(r) == "match") == 3, "Deduplizierung und Einheiten");

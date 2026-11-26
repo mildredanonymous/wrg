@@ -17,6 +17,17 @@ In der Trefferliste wählen Auf/Ab den Treffer. Enter öffnet das Original und l
 
 `wrg` liest die Dateien bei jeder Suche direkt. Bei einer Autorensuche in Word-Dokumenten spart `--type docx --field author --exact` das Lesen der Dokumenttexte und der PDFs. Für eine Inhaltssuche ohne Scan-Erkennung lässt sich `--no-ocr` verwenden. Die sortierte Textausgabe erscheint nach der Suche und zeigt Dateiname, Fundstelle, Vorschau und bei Bedarf den Ordner. Fortschrittsmeldungen erscheinen im interaktiven Modus und mit `--verbose`. Temporäre Word-Sperrdateien mit dem Präfix `~$` werden übersprungen. Mit `--format jsonl` werden die Treffer während der Suche ausgegeben.
 
+### Frühe Inhaltstreffer und wiederholte Scan-Suchen
+
+```powershell
+wrg --field content --stream 'Kündigungsfrist'
+wrg --field content --stream --ocr-cache 'Kündigungsfrist'
+```
+
+`--stream` zeigt Texttreffer in der Reihenfolge ihrer Verfügbarkeit. Der Standardmodus und die interaktive Liste sortieren weiterhin nach Trefferqualität. Für PDFs liest `wrg` Text- und Bildinformationen in Blöcken von bis zu 16 Seiten. Ein OCR-Worker verarbeitet höchstens 64 vorgemerkte Scan-Seiten parallel zur laufenden Suche. Wenn die Warteschlange voll ist, wartet die Suche auf einen freien Platz. Eine Seite mit Textebene und OCR erscheint einmal mit dem bestplatzierten Treffer.
+
+`--ocr-cache` speichert erkannten Scan-Text im Klartext unter `%LOCALAPPDATA%\wrg\ocr-v1` und ist pro Aufruf aktiv. Der Cache verwendet einen Fingerabdruck des gerenderten Bildes, der OCR-Engine und der Sprachmodelle. Er kann auch identische Bilder in verschiedenen PDFs wiederverwenden. Die PDF-Seite wird weiterhin gerendert. Der Platzbedarf der Einträge ist auf 256 MiB begrenzt. Der Cache-Ordner kann zum Leeren gelöscht werden. Unter Linux braucht der Cache für eine systemweite Tesseract-Installation einen gesetzten `TESSDATA_PREFIX` mit den verwendeten Sprachmodellen.
+
 ## Build und Prüfung
 
 Für den Build werden das in `global.json` fixierte .NET SDK, Windows PowerShell 5.1 oder PowerShell 7, 7-Zip mit NSIS-Unterstützung sowie Internetzugang zum Abruf der festgelegten Komponenten benötigt.

@@ -14,10 +14,10 @@ static partial class Documents
     private static readonly XNamespace Word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
     public static IEnumerable<Unit> Read(string path, string type, Options options,
-        Action<DocumentIssue> issue, Action excludePage, Action pageFinished, Action<int> pageStarted, CancellationToken cancellation) => type switch
+        Action<DocumentIssue> issue, Action excludePage, Action pageFinished, Action<int> pageStarted, Action<int> scheduleOcr, CancellationToken cancellation) => type switch
     {
         "docx" => Docx(path, options.Field, cancellation),
-        "pdf" => Pdf(path, options, issue, excludePage, pageFinished, pageStarted, cancellation),
+        "pdf" => Pdf(path, options, issue, excludePage, pageFinished, pageStarted, scheduleOcr, cancellation),
         _ when options.Field is not ("all" or "content") => [],
         _ => Text(path, type == "md", cancellation)
     };

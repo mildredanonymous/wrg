@@ -68,7 +68,11 @@ static int Run(string[] args)
             }
         }
         else
-            foreach (Result hit in hits) Console.WriteLine(Output.Describe(hit, options.Verbose));
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (i > 0) Console.WriteLine();
+                Console.WriteLine(Output.Describe(hits[i], options.Verbose));
+            }
         return output.Complete(options.Verbose);
     }
     catch (OperationCanceledException)
@@ -135,7 +139,12 @@ sealed class Output(bool json)
     public void Issue(string code, string message, string? path = null, int? page = null, string severity = "error")
     {
         if (json) Write("issue", new { code, message, path, page, severity });
-        else Console.Error.WriteLine(Clean($"{path}{(page is null ? "" : $" · Seite {page}")}{(path is null ? "" : " · ")}{message}"));
+        else
+        {
+            string position = page is int number ? $" · Seite {number}" : "";
+            Console.Error.WriteLine(Clean(path is null ? message : $"Hinweis: {message}"));
+            if (path is not null) Console.Error.WriteLine("  " + Clean(path + position));
+        }
     }
 
     public Result[] Sorted() => results.OrderBy(r => r.Hit.Rank).ThenBy(r => r.Hit.Distance)
@@ -144,8 +153,13 @@ sealed class Output(bool json)
 
     public int Complete(bool verbose)
     {
-        if (!json && (verbose || Gap || Excluded > 0 || PagesExcluded > 0))
-            Console.Error.WriteLine($"Dateien: {Searched} geprüft, {Skipped} übersprungen, {Excluded} ausgeschlossen. Seiten: {PagesSkipped} übersprungen, {PagesExcluded} ausgeschlossen.");
+        if (!json)
+        {
+            string count = Matches == 1 ? "1 Treffer" : $"{Matches} Treffer";
+            Console.Error.WriteLine($"{count} · {Searched} Dateien durchsucht" + (Gap ? " · Suche mit Lücken" : ""));
+            if (verbose || Gap)
+                Console.Error.WriteLine($"Dateien: {Skipped} übersprungen, {Excluded} ausgeschlossen. Seiten: {PagesSkipped} übersprungen, {PagesExcluded} ausgeschlossen.");
+        }
         return Gap ? (CheckedInput || Searched > 0 ? Finish("partial", 3) : Finish("failed", 2))
             : Finish("complete", Matches == 0 ? 1 : 0);
     }
@@ -167,8 +181,11 @@ sealed class Output(bool json)
 
     public static string Describe(Result result, bool absolute)
     {
-        string path = absolute ? result.Path : Path.GetRelativePath(Environment.CurrentDirectory, result.Path);
-        return Clean($"{path} · {DescribeLocation(result)} · {result.Snippet}");
+        string folder = Path.GetDirectoryName(result.Path) ?? result.Path;
+        if (!absolute) folder = Path.GetRelativePath(Environment.CurrentDirectory, folder);
+        string heading = Clean($"{Path.GetFileName(result.Path)} · {DescribeLocation(result)}");
+        return $"{heading}{Environment.NewLine}  {Clean(result.Snippet)}" +
+            (folder == "." ? "" : $"{Environment.NewLine}  Ordner: {Clean(folder)}");
     }
 
     public static string DescribeLocation(Result result, bool details = true)
@@ -332,6 +349,13 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             return;
         }
         if (!visited.Add(path)) return;
+        if ((type == "docx" && Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal)) ||
+            ((options.Field is "author" or "title") && type is not ("docx" or "pdf")))
+        {
+            output.Excluded++;
+            output.CheckedInput |= explicitPath;
+            return;
+        }
         bool checkedUnit = false, gap = false;
         bool excluded = false;
         try
@@ -345,7 +369,7 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 if (explicitPath) output.CheckedInput = true;
                 return;
             }
-            output.Progress(path);
+            if (options.Interactive || options.Verbose) output.Progress(path);
             Result? pendingPage = null;
             void FlushPage()
             {
@@ -386,7 +410,10 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 gap = true;
                 Report(issue.Code, issue.Message, path, issue.Page);
             }, () => { output.PagesExcluded++; excludedPage = true; }, FlushPage,
-                page => output.Progress(path, page), cancellation))
+                page =>
+                {
+                    if (options.Interactive || options.Verbose) output.Progress(path, page);
+                }, cancellation))
                 Check(unit);
             if (!gap && !excludedPage && options.Field is "all" or "content") checkedUnit = true;
         }

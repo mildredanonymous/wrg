@@ -38,6 +38,16 @@ try
             writer.Write(contents);
         }
     }
+    string lockFile = Path.Combine(sub, "~$Vertrag.docx");
+    File.WriteAllText(lockFile, "Word-Sperrdatei, kein ZIP");
+    var authorSearch = Json(0, "Keller", root.FullName, "--field", "author");
+    Require(!authorSearch.Any(r => Kind(r) == "issue") &&
+        authorSearch[^1].GetProperty("files_excluded").GetInt32() == 3,
+        "Word-Sperrdatei und Formate ohne Autorenfeld werden regulär ausgeschlossen");
+    string authorText = Run(0, "Keller", root.FullName, "--field", "author");
+    Require(authorText.StartsWith("Vertrag.docx · Autor" + Environment.NewLine + "  Keller") &&
+        authorText.Contains(Environment.NewLine + "  Ordner: Unterordner"),
+        "Texttreffer zeigt Dateiname, Vorschau und separaten Ordner");
     Require(Run(0, "--help").Contains("--no-ocr"), "Hilfe");
     Require(Run(0, "--version").StartsWith("wrg "), "Version");
     Require(Run(0, "--exact", "--", "TLS-ID", txt).Contains("Zeile 1"), "Optionsende und UTF-16 BE");

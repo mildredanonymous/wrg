@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -8,6 +9,8 @@ sealed class OcrCache
     private readonly string directory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify), "wrg", "ocr-v1");
     private readonly Lazy<string?> fingerprint = new(ModelFingerprint);
+    private readonly Lazy<string?> renderer = new(() =>
+        HashFile(FindTool(Path.Combine("poppler", "Library", "bin"), "pdftoppm")));
 
     public string? Key(string image)
     {
@@ -20,12 +23,50 @@ sealed class OcrCache
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    public string? Read(string? key)
+    public static string? PdfFingerprint(string path, CancellationToken cancellation)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return Convert.ToHexString(SHA256.HashDataAsync(stream, cancellation).AsTask().GetAwaiter().GetResult());
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    public string? PageKey(Lazy<string?>? pdfFingerprint, int page)
+    {
+        try
+        {
+            if (!Path.IsPathFullyQualified(directory) || fingerprint.Value is not { } model ||
+                renderer.Value is not { } render || pdfFingerprint?.Value is not { } pdf)
+                return null;
+            string source = $"pdf-page-v1:gray:2400:png:{render}:{model}:{pdf}:{page.ToString(CultureInfo.InvariantCulture)}";
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    public string? ReadPage(string? pageKey)
+    {
+        string? imageKey = ReadEntry(pageKey, pageReference: true);
+        return imageKey is { Length: 128 } && imageKey.All(Uri.IsHexDigit) ? Read(imageKey) : null;
+    }
+
+    public void RememberPage(string? pageKey, string? imageKey)
+    {
+        if (imageKey is not null) WriteEntry(pageKey, imageKey, pageReference: true);
+    }
+
+    public string? Read(string? key) => ReadEntry(key, pageReference: false);
+
+    public void Write(string? key, string text) => WriteEntry(key, text, pageReference: false);
+
+    private string? ReadEntry(string? key, bool pageReference)
     {
         if (key is null) return null;
         try
         {
-            using var stream = new FileStream(Slot(key), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            using var stream = new FileStream(Slot(key, pageReference), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             if (stream.Length > MaxEntryBytes) return null;
             using var reader = new StreamReader(stream, Encoding.UTF8);
             return reader.ReadLine() == key ? reader.ReadToEnd() : null;
@@ -33,7 +74,7 @@ sealed class OcrCache
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    public void Write(string? key, string text)
+    private void WriteEntry(string? key, string text, bool pageReference)
     {
         if (key is null) return;
         string entry = key + "\n" + text;
@@ -43,7 +84,7 @@ sealed class OcrCache
         {
             Directory.CreateDirectory(directory);
             File.WriteAllText(temporary, entry);
-            File.Move(temporary, Slot(key), overwrite: true);
+            File.Move(temporary, Slot(key, pageReference), overwrite: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         finally
@@ -53,27 +94,38 @@ sealed class OcrCache
         }
     }
 
-    private string Slot(string key)
+    private string Slot(string key, bool pageReference)
     {
-        // 1,024 slots of at most 256 KiB.
-        int slot = Convert.ToInt32(key[..3], 16) & 1023;
-        return Path.Combine(directory, $"{slot:X3}.txt");
+        int slot = Convert.ToInt32(key[..3], 16);
+        // References are small pointers to the existing, separately bounded text entries.
+        return Path.Combine(directory, pageReference ? $"{slot:X3}.ref" : $"{slot & 1023:X3}.txt");
+    }
+
+    private static string? HashFile(string path)
+    {
+        if (!File.Exists(path)) return null;
+        using FileStream stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    private static string FindTool(string folder, string tool)
+    {
+        string bundled = Path.Combine(AppContext.BaseDirectory, "tools", folder,
+            tool + (OperatingSystem.IsWindows() ? ".exe" : ""));
+        if (File.Exists(bundled) || OperatingSystem.IsWindows()) return bundled;
+        return (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Where(Path.IsPathFullyQualified)
+            .Select(path => Path.Combine(path, tool))
+            .FirstOrDefault(File.Exists) ?? bundled;
     }
 
     private static string? ModelFingerprint()
     {
         string bundled = Path.Combine(AppContext.BaseDirectory, "tools", "tesseract");
-        string executable = Path.Combine(bundled, OperatingSystem.IsWindows() ? "tesseract.exe" : "tesseract");
+        string executable = FindTool("tesseract", "tesseract");
         string? data = Path.Combine(bundled, "tessdata");
         if (!Directory.Exists(data)) data = Environment.GetEnvironmentVariable("TESSDATA_PREFIX");
-        if (!File.Exists(executable) && !OperatingSystem.IsWindows())
-        {
-            executable = (Environment.GetEnvironmentVariable("PATH") ?? "")
-                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-                .Where(Path.IsPathFullyQualified)
-                .Select(folder => Path.Combine(folder, "tesseract"))
-                .FirstOrDefault(File.Exists) ?? executable;
-        }
 
         if (data is null) return null;
         var hashes = new byte[3 * SHA256.HashSizeInBytes];

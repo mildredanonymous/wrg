@@ -26,7 +26,7 @@ wrg --field content --stream --ocr-cache 'Kündigungsfrist'
 
 `--stream` zeigt Texttreffer in der Reihenfolge ihrer Verfügbarkeit. Der Standardmodus und die interaktive Liste sortieren weiterhin nach Trefferqualität. Für PDFs liest `wrg` Text- und Bildinformationen in Blöcken von bis zu 16 Seiten. Ein OCR-Worker verarbeitet höchstens 64 vorgemerkte Scan-Seiten parallel zur laufenden Suche. Wenn die Warteschlange voll ist, wartet die Suche auf einen freien Platz. Eine Seite mit Textebene und OCR erscheint einmal mit dem bestplatzierten Treffer.
 
-`--ocr-cache` speichert erkannten Scan-Text im Klartext unter `%LOCALAPPDATA%\wrg\ocr-v1` und ist pro Aufruf aktiv. Der Cache verwendet einen Fingerabdruck des gerenderten Bildes, der OCR-Engine und der Sprachmodelle. Er kann auch identische Bilder in verschiedenen PDFs wiederverwenden. Die PDF-Seite wird weiterhin gerendert. Der Platzbedarf der Einträge ist auf 256 MiB begrenzt. Der Cache-Ordner kann zum Leeren gelöscht werden. Unter Linux braucht der Cache für eine systemweite Tesseract-Installation einen gesetzten `TESSDATA_PREFIX` mit den verwendeten Sprachmodellen.
+`--ocr-cache` speichert erkannten Scan-Text im Klartext unter `%LOCALAPPDATA%\wrg\ocr-v1` und ist pro Aufruf aktiv. Der Cache verwendet einen Fingerabdruck des gerenderten Bildes, der OCR-Engine und der Sprachmodelle. Er kann auch identische Bilder in verschiedenen PDFs wiederverwenden. Bei einem unveränderten PDF können die Seitenbilder beim nächsten Lauf übersprungen werden. Der Schnellzugriff prüft den Fingerabdruck der PDF-Datei und berücksichtigt die Version des PDF-Renderers. Für den erkannten Text stehen bis zu 256 MiB zur Verfügung. Hinzu kommen kleine Verweise für den Schnellzugriff. Der Cache-Ordner kann zum Leeren gelöscht werden. Unter Linux braucht der Cache für eine systemweite Tesseract-Installation einen gesetzten `TESSDATA_PREFIX` mit den verwendeten Sprachmodellen.
 
 ### Pfade ausgeben, Ordner auslassen und Suchzeit messen
 
@@ -39,7 +39,7 @@ wrg --field content --exclude-dir Archiv --exclude-dir 'Alte Backups' --timing m
 
 `--exclude-dir` nimmt einen Ordnernamen ohne Pfad oder Platzhalter an und kann mehrfach gesetzt werden. Gross- und Kleinschreibung spielen dabei keine Rolle. Ein passender Unterordner und sein gesamter Inhalt werden ausgelassen. Ein direkt angegebener Suchpfad dient weiterhin als Startpunkt.
 
-`--timing` meldet auf stderr die Zeit bis zum ersten gefundenen Treffer, die gesamte Suchzeit sowie die Anzahl der Tesseract-Aufrufe und der OCR-Seiten aus dem Cache. Die Messung endet mit Abschluss der Suche, auch bei interaktiver Ausgabe.
+`--timing` meldet auf stderr die Zeit bis zum ersten gefundenen Treffer, die gesamte Suchzeit sowie die Anzahl der Render- und Tesseract-Aufrufe sowie der OCR-Seiten aus dem Cache. Die Messung endet mit Abschluss der Suche, auch bei interaktiver Ausgabe.
 
 ## Build und Prüfung
 

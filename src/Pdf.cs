@@ -149,15 +149,24 @@ static partial class Documents
     }
 
     public static Unit? RecognizePdfPage(string path, int page, Action<DocumentIssue> issue,
-        OcrCache? cache, Action<bool> countOcr, CancellationToken cancellation)
+        OcrCache? cache, Lazy<string?>? pdfFingerprint, Action<bool> countOcr, Action countRender,
+        CancellationToken cancellation)
     {
+        string? pageKey = cache?.PageKey(pdfFingerprint, page);
+        string? recognized = cache?.ReadPage(pageKey);
+        if (recognized is not null)
+        {
+            countOcr(true);
+            return new Unit(recognized, Source: "ocr", Page: page);
+        }
+
         string[] range = Range(page, page);
-        string? recognized = null;
         string? directory = null;
         try
         {
             directory = Directory.CreateTempSubdirectory("wrg-").FullName;
             string prefix = Path.Combine(directory, "page");
+            countRender();
             var render = RunTool("pdftoppm", [.. range, "-scale-to", "2400", "-gray", "-png", "-singlefile", path, prefix], 30, cancellation);
             if (render.Code != 0) throw new IOException("PDF-Seite konnte nicht gerendert werden.");
             string tessdata = Path.Combine(AppContext.BaseDirectory, "tools", "tesseract", "tessdata");
@@ -177,6 +186,7 @@ static partial class Documents
                     cache?.Write(key, recognized);
                 }
             }
+            if (recognized is not null) cache?.RememberPage(pageKey, key);
         }
         catch (TimeoutException error) { issue(new("ocr_timeout", error.Message, page)); }
         catch (Win32Exception) { issue(new("ocr_unavailable", "Die lokale OCR- oder Render-Komponente fehlt.", page)); }

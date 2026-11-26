@@ -112,7 +112,7 @@ sealed class Output(bool json)
     private HashSet<string>? matchingPaths;
     private Stopwatch? elapsed;
     private TimeSpan? firstMatch;
-    private int ocrAttempts, ocrCacheHits;
+    private int ocrAttempts, ocrCacheHits, pageRenders;
 
     public void Start(Options options)
     {
@@ -137,6 +137,11 @@ sealed class Output(bool json)
         if (!timing) return;
         if (fromCache) Interlocked.Increment(ref ocrCacheHits);
         else Interlocked.Increment(ref ocrAttempts);
+    }
+
+    public void CountRender()
+    {
+        if (timing) Interlocked.Increment(ref pageRenders);
     }
 
     private long? lastProgress;
@@ -222,7 +227,7 @@ sealed class Output(bool json)
         {
             string first = firstMatch is TimeSpan found ? $"{found.TotalSeconds:0.000} s" : "kein Treffer";
             Console.Error.WriteLine($"Zeit · erster Treffer: {first} · Suche: {elapsed.Elapsed.TotalSeconds:0.000} s");
-            Console.Error.WriteLine($"OCR · Tesseract-Aufrufe: {ocrAttempts} · Seiten aus dem Cache: {ocrCacheHits}");
+            Console.Error.WriteLine($"OCR · Tesseract-Aufrufe: {ocrAttempts} · Seiten aus dem Cache: {ocrCacheHits} · Render-Aufrufe: {pageRenders}");
         }
         if (json) Write("summary", new
         {
@@ -314,7 +319,7 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
     }
 
     private void QueueOcr(string path, int page, DateTime modified, long length,
-        Action<Unit?, List<DocumentIssue>> complete)
+        Lazy<string?>? pdfFingerprint, Action<Unit?, List<DocumentIssue>> complete)
     {
         const int maxPending = 64;
         CollectOcr(wait: pendingOcr.Count >= maxPending);
@@ -328,7 +333,8 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             Unit? unit = null;
             bool unchanged = Unchanged();
             if (unchanged)
-                unit = Documents.RecognizePdfPage(path, page, issues.Add, ocrCache, output.CountOcr, workerCancellation);
+                unit = Documents.RecognizePdfPage(path, page, issues.Add, ocrCache, pdfFingerprint,
+                    output.CountOcr, output.CountRender, workerCancellation);
             if (!unchanged || !Unchanged())
             {
                 unit = null;
@@ -541,11 +547,14 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 gap = true;
                 Report(issue.Code, issue.Message, path, issue.Page);
             }
+            Lazy<string?>? pdfFingerprint = null;
             void ScheduleOcr(int page)
             {
+                if (ocrCache is not null)
+                    pdfFingerprint ??= new Lazy<string?>(() => OcrCache.PdfFingerprint(path, workerCancellation));
                 Result? textHit = pendingPage;
                 pendingPage = null;
-                QueueOcr(path, page, modified, info.Length, (unit, issues) =>
+                QueueOcr(path, page, modified, info.Length, pdfFingerprint, (unit, issues) =>
                 {
                     foreach (DocumentIssue issue in issues) OnIssue(issue);
                     Result? hit = Better(textHit, unit is null ? null : Find(unit));

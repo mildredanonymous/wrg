@@ -193,7 +193,8 @@ try
     if (args.Length >= 2)
     {
         var withOcr = Capture(0, "--format", "jsonl", "--timing", "--exact", "Zertifikat", Path.GetFullPath(args[1]));
-        Require(withOcr.Stderr.Contains("Tesseract-Aufrufe: 2") && withOcr.Stderr.Contains("Seiten aus dem Cache: 0"),
+        Require(withOcr.Stderr.Contains("Tesseract-Aufrufe: 2") &&
+            withOcr.Stderr.Contains("Seiten aus dem Cache: 0") && withOcr.Stderr.Contains("Render-Aufrufe: 2"),
             "OCR-Statistik zählt die tatsächlich angestossenen Erkennungen");
         Require(withOcr.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).All(line =>
         {

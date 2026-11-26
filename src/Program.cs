@@ -196,7 +196,8 @@ sealed class Output(bool json)
         string folder = Path.GetDirectoryName(result.Path) ?? result.Path;
         if (!absolute) folder = Path.GetRelativePath(Environment.CurrentDirectory, folder);
         string heading = Clean($"{Path.GetFileName(result.Path)} · {DescribeLocation(result)}");
-        return $"{heading}{Environment.NewLine}  {Clean(result.Snippet)}" +
+        string preview = result.Unit.Field == "filename" ? "" : $"{Environment.NewLine}  {Clean(result.Snippet)}";
+        return heading + preview +
             (folder == "." ? "" : $"{Environment.NewLine}  Ordner: {Clean(folder)}");
     }
 
@@ -507,9 +508,9 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 });
                 pending++;
             }
-            if (options.Field is "all" or "filename" && type != "pdf")
+            if (options.Field == "filename" || (options.Field == "all" && type != "pdf"))
                 Check(new Unit(info.Name, "filename", "metadata"));
-            if (options.Field == "filename" && type != "pdf") return;
+            if (options.Field == "filename") return;
             if (info.Length > Documents.FileLimit) throw new InvalidDataException("Datei überschreitet 256 MiB.");
             foreach (Unit unit in Documents.Read(path, type, options, OnIssue,
                 () => { output.PagesExcluded++; excludedPage = true; }, FlushPage,

@@ -15,7 +15,7 @@ In der Trefferliste wählen Auf/Ab den Treffer. Enter öffnet das Original und l
 
 ## In grossen Ordnern suchen
 
-`wrg` liest die Dateien bei jeder Suche direkt. Bei einer Autorensuche in Word-Dokumenten spart `--type docx --field author --exact` das Lesen der Dokumenttexte und der PDFs. Für eine Inhaltssuche ohne Scan-Erkennung lässt sich `--no-ocr` verwenden. Die sortierte Textausgabe erscheint nach der Suche und zeigt Dateiname, Fundstelle, Vorschau und bei Bedarf den Ordner. Fortschrittsmeldungen erscheinen im interaktiven Modus und mit `--verbose`. Temporäre Word-Sperrdateien mit dem Präfix `~$` werden übersprungen. Mit `--format jsonl` werden die Treffer während der Suche ausgegeben.
+`wrg` liest die Dateien bei jeder Suche direkt. Mit `--field filename` prüft `wrg` ausschliesslich den Dateinamen. Bei einer Autorensuche in Word-Dokumenten spart `--type docx --field author --exact` das Lesen der Dokumenttexte und der PDFs. Für eine Inhaltssuche ohne Scan-Erkennung lässt sich `--no-ocr` verwenden. Die sortierte Textausgabe erscheint nach der Suche und zeigt Dateiname, Fundstelle, Vorschau und bei Bedarf den Ordner. Fortschrittsmeldungen erscheinen im interaktiven Modus und mit `--verbose`. Temporäre Word-Sperrdateien mit dem Präfix `~$` werden übersprungen. Mit `--format jsonl` werden die Treffer während der Suche ausgegeben.
 
 ### Frühe Inhaltstreffer und wiederholte Scan-Suchen
 

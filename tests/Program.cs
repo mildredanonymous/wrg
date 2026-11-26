@@ -48,6 +48,17 @@ try
     Require(authorText.StartsWith("Vertrag.docx · Autor" + Environment.NewLine + "  Keller") &&
         authorText.Contains(Environment.NewLine + "  Ordner: Unterordner"),
         "Texttreffer zeigt Dateiname, Vorschau und separaten Ordner");
+    string matchingPdf = Path.Combine(root.FullName, "Notiz_Beispielname.pdf");
+    string unrelatedPdf = Path.Combine(root.FullName, "Andere_Notiz.pdf");
+    File.WriteAllText(matchingPdf, "Absichtlich keine lesbare PDF-Datei.");
+    File.WriteAllText(unrelatedPdf, "Absichtlich keine lesbare PDF-Datei.");
+    var filenameMatches = Json(0, "Beispielname", matchingPdf, unrelatedPdf, "--field", "filename", "--exact");
+    Require(!filenameMatches.Any(r => Kind(r) == "issue") &&
+        filenameMatches.Count(r => Kind(r) == "match") == 1 &&
+        One(filenameMatches, "match", "field", "filename").GetProperty("filename").GetString() == "Notiz_Beispielname.pdf",
+        "Dateinamensuche prüft PDF-Namen ohne PDF-Parser oder Warnung zum Inhalt");
+    File.Delete(matchingPdf);
+    File.Delete(unrelatedPdf);
     Require(Run(0, "--help").Contains("--no-ocr"), "Hilfe");
     Require(Run(0, "--version").StartsWith("wrg "), "Version");
     Require(Run(0, "--exact", "--", "TLS-ID", txt).Contains("Zeile 1"), "Optionsende und UTF-16 BE");

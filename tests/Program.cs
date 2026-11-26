@@ -60,6 +60,19 @@ try
         .GetProperty("match_kind").GetString() == "spelling_variant", "Umlautvariante");
     Require(Json(0, "TLS und Zertifikat", md, "--phrase").Single(r => Kind(r) == "match")
         .GetProperty("line").GetInt32() == 3, "Zeilenübergreifende Markdown-Phrase");
+    string unicode = Path.Combine(root.FullName, "Unicode.txt");
+    File.WriteAllText(unicode, "Ku\u0308ndigung 𐐀𐐨\n");
+    var unicodeHit = Json(0, "Kündigung", unicode, "--exact").Single(r => Kind(r) == "match");
+    Require(unicodeHit.GetProperty("matched_text")[0].GetString() == "Ku\u0308ndigung", "Unicode-Originaltext");
+    Json(1, "𐐀", unicode, "--exact");
+    Json(0, "𐐨𐐨", unicode, "--exact");
+    string midnight = Path.Combine(root.FullName, "Mitternacht.txt");
+    File.WriteAllText(midnight, "Zertifikat");
+    var limit = new DateTime(2026, 1, 15);
+    File.SetLastWriteTime(midnight, limit);
+    Json(0, "Zertifikat", midnight, "--modified-since", "2026-01-15");
+    File.SetLastWriteTime(midnight, limit.AddSeconds(-1));
+    Json(1, "Zertifikat", midnight, "--modified-since", "2026-01-15");
     Json(1, "TLA", txt);
     Json(1, "Zertifikat TLS", txt, "--modified-since", "2099-01-01");
     Json(2, "--unknown");
@@ -82,7 +95,40 @@ try
             r.GetProperty("page").GetInt32() == 2), "PDF-Scan trotz textlicher Kopfzeile");
         var noOcr = Json(0, "Zertifikat", fixture, "--type", "pdf", "--no-ocr");
         Require(noOcr.All(r => Kind(r) != "match" || r.GetProperty("source").GetString() != "ocr"), "OCR abschaltbar");
+        Require(noOcr[^1].GetProperty("pages_excluded").GetInt32() == 1, "Reine Bildseite ausgeschlossen");
+        var hyphenation = Json(0, "Kündigungsfrist", fixture, "--exact", "--no-ocr")
+            .Single(r => Kind(r) == "match");
+        Require(hyphenation.GetProperty("matched_text")[0].GetString()!.StartsWith("Kündigungs-"),
+            "Silbentrennung mit Originaltext");
+        var english = Json(0, "certificate", fixture, "--exact");
+        Require(english.Any(r => Kind(r) == "match" && r.GetProperty("page").GetInt32() == 3 &&
+            r.GetProperty("source").GetString() == "ocr"), "Englischer Treffer auf reiner Scan-Seite");
+        string broken = Path.Combine(root.FullName, "Defekt.pdf");
+        File.WriteAllText(broken, "Keine PDF-Datei.");
+        Require(Json(2, "Zertifikat", broken).Any(r => Kind(r) == "issue" &&
+            r.GetProperty("code").GetString() == "parse_failed"), "Defektes PDF");
     }
+    string fakeViewer = Path.Combine(root.FullName, "SumatraPDF.exe");
+    File.WriteAllText(fakeViewer, "");
+    string selectedPath = Path.Combine(sub, "Name mit Leerzeichen.pdf");
+    var selectedResult = new Result(selectedPath, "pdf", DateTime.UtcNow,
+        new Unit("", Page: 3), new Hit(0, 0, ["Zertifikat"], 0), "Das Zertifikat");
+    string? previousViewer = Environment.GetEnvironmentVariable("WRG_SUMATRA_PATH");
+    try
+    {
+        Environment.SetEnvironmentVariable("WRG_SUMATRA_PATH", fakeViewer);
+        var calls = new List<ProcessStartInfo>();
+        Require(Picker.Open(selectedResult, start => { calls.Add(start); return true; }), "SumatraPDF-Start");
+        Require(calls.Single().FileName == fakeViewer &&
+            calls[0].ArgumentList.SequenceEqual(["-page", "3", selectedPath]) &&
+            !calls[0].UseShellExecute, "SumatraPDF-Seitensprung mit vollständigem Pfad");
+        calls.Clear();
+        Require(Picker.Open(selectedResult, start => { calls.Add(start); return start.UseShellExecute; }),
+            "Rückfall auf Dateizuordnung");
+        Require(calls.Count == 2 && calls[1].FileName == selectedPath &&
+            calls[1].UseShellExecute, "Dateizuordnung für ausgewählten Treffer");
+    }
+    finally { Environment.SetEnvironmentVariable("WRG_SUMATRA_PATH", previousViewer); }
     Console.WriteLine("Alle ausgeführten Smoke-Tests bestanden.");
 }
 finally { root.Delete(recursive: true); }

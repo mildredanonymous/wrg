@@ -338,7 +338,6 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             }
             void Check(Unit unit)
             {
-                if (pendingPage is not null && pendingPage.Unit.Page != unit.Page) FlushPage();
                 cancellation.ThrowIfCancellationRequested();
                 if (options.Field != "all" && options.Field != unit.Field) return;
                 checkedUnit = true;
@@ -370,9 +369,8 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             {
                 gap = true;
                 Report(issue.Code, issue.Message, path, issue.Page);
-            }, () => { output.PagesExcluded++; excludedPage = true; }, cancellation))
+            }, () => { output.PagesExcluded++; excludedPage = true; }, FlushPage, cancellation))
                 Check(unit);
-            FlushPage();
             if (!gap && !excludedPage && options.Field is "all" or "content") checkedUnit = true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or

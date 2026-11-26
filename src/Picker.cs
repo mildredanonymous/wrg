@@ -21,7 +21,7 @@ static class Picker
                 case ConsoleKey.Escape: return true;
                 case ConsoleKey.UpArrow: index = Math.Max(0, index - 1); Show(); break;
                 case ConsoleKey.DownArrow: index = Math.Min(hits.Length - 1, index + 1); Show(); break;
-                case ConsoleKey.Enter: return Open(hits[index]);
+                case ConsoleKey.Enter: return Open(hits[index], TryStart);
             }
         }
 
@@ -36,7 +36,7 @@ static class Picker
         }
     }
 
-    private static bool Open(Result result)
+    internal static bool Open(Result result, Func<ProcessStartInfo, bool> startViewer)
     {
         if (result.Type == "pdf" && result.Unit.Page is int page)
         {
@@ -50,14 +50,14 @@ static class Picker
                 start.ArgumentList.Add("-page");
                 start.ArgumentList.Add(page.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 start.ArgumentList.Add(result.Path);
-                if (TryStart(start)) return true;
+                if (startViewer(start)) return true;
                 Console.Error.WriteLine("SumatraPDF konnte nicht gestartet werden. Dateizuordnung wird verwendet.");
             }
             else if (configured is not null)
                 Console.Error.WriteLine("WRG_SUMATRA_PATH muss auf eine vorhandene ausführbare Datei zeigen. Dateizuordnung wird verwendet.");
         }
         Console.WriteLine(Output.Describe(result, true));
-        return TryStart(new ProcessStartInfo(result.Path) { UseShellExecute = true, Verb = "open" });
+        return startViewer(new ProcessStartInfo(result.Path) { UseShellExecute = true, Verb = "open" });
     }
 
     private static bool TryStart(ProcessStartInfo start)

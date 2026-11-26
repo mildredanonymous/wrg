@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 static partial class Documents
 {
     private static IEnumerable<Unit> Pdf(string path, Options options, Action<DocumentIssue> issue,
-        Action excludePage, CancellationToken cancellation)
+        Action excludePage, Action pageFinished, CancellationToken cancellation)
     {
         ProcessResult info;
         try { info = RunTool("pdfinfo", ["-enc", "UTF-8", path], 20, cancellation); }
@@ -51,6 +51,7 @@ static partial class Documents
             }
             foreach (Unit unit in PdfPage(path, page, options, issue, excludePage, cancellation))
                 yield return unit;
+            pageFinished();
         }
     }
 
@@ -62,7 +63,7 @@ static partial class Documents
         ProcessResult text;
         try
         {
-            text = RunTool("pdftotext", [.. range, "-enc", "UTF-8", "-nopgbrk", path, "-"], 20, cancellation);
+            text = RunTool("pdftotext", [.. range, "-enc", "UTF-8", "-layout", "-nopgbrk", path, "-"], 20, cancellation);
             if (text.Code != 0) throw new IOException("PDF-Textebene konnte nicht gelesen werden.");
         }
         catch (Exception error) when (error is Win32Exception or TimeoutException or IOException)
@@ -73,7 +74,7 @@ static partial class Documents
         }
         string extracted = text.Text.Trim();
         if (extracted.Length > 0) yield return new Unit(extracted, Page: page);
-        if (extracted.Count(char.IsLetterOrDigit) >= 80 && extracted.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length >= 3)
+        if (extracted.Count(char.IsLetterOrDigit) >= 80 && extracted.Split('\n').Count(line => !string.IsNullOrWhiteSpace(line)) >= 3)
             yield break;
 
         ProcessResult imageList;

@@ -7,4 +7,7 @@
     <Version>0.1.0</Version>
     <RuntimeFrameworkVersion Condition="'$(RuntimeIdentifier)' == 'win-x64'">10.0.15</RuntimeFrameworkVersion>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Smoke" />
+  </ItemGroup>
 </Project>

@@ -46,7 +46,7 @@ try {
     $tessdata = Join-Path $tesseract 'tessdata'
     New-Item -ItemType Directory -Path $tessdata | Out-Null
     Copy-Item -LiteralPath $deu, $eng -Destination $tessdata
-    Copy-Item -LiteralPath 'README.md', 'LIZENZHINWEISE.md' -Destination $package
+    Copy-Item -LiteralPath 'README.md', 'LIZENZHINWEISE.md', 'JSONL.md', 'PLAN.md' -Destination $package
     if ($IsWindows) {
         dotnet run --project tests -c Release -- (Join-Path $package 'wrg.exe') tests/fixtures/gemischt.pdf
         if ($LASTEXITCODE -ne 0) { throw 'Der Windows-Pakettest ist fehlgeschlagen.' }

@@ -44,8 +44,10 @@ static class Picker
                 if (key == ConsoleKey.Escape) return allOpened;
                 if (key == ConsoleKey.Enter)
                 {
-                    var opened = Open(hits[index], StartViewer);
-                    status = opened.Message;
+                    Result selected = hits[index];
+                    Result target = ResolveOpenTarget(hits, selected);
+                    var opened = Open(target, StartViewer);
+                    status = target == selected ? opened.Message : $"Inhaltstreffer · {opened.Message}";
                     allOpened &= opened.Success;
                     changed = true;
                     continue;
@@ -137,14 +139,25 @@ static class Picker
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetConsoleMode(IntPtr handle, uint mode);
 
+    internal static Result ResolveOpenTarget(Result[] hits, Result selected)
+    {
+        if (selected.Type != "pdf" || selected.Unit.Page is not null) return selected;
+
+        return hits.FirstOrDefault(hit => hit.Unit.Page is not null &&
+            string.Equals(hit.Path, selected.Path, OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) ?? selected;
+    }
+
     internal static (bool Success, string Message) Open(Result result, Func<ProcessStartInfo, bool> startViewer)
     {
         if (!File.Exists(result.Path))
             return (false, $"Datei fehlt oder ist nicht zugänglich · {result.Path}");
 
-        string location = Output.DescribeLocation(result, details: false);
+        string location = result.Type == "pdf" && result.Unit.Page is null
+            ? $"{Output.DescribeLocation(result, details: false)} · Treffer ohne Seitenzahl"
+            : Output.DescribeLocation(result, details: false);
         string fallback = "";
-        if (result.Type == "pdf" && result.Unit.Page is int page)
+        if (result.Type == "pdf")
         {
             string? configured = Environment.GetEnvironmentVariable("WRG_SUMATRA_PATH");
             string? sumatra = configured is null ? FindSumatra() :
@@ -154,8 +167,11 @@ static class Picker
             {
                 var start = new ProcessStartInfo(sumatra) { UseShellExecute = false };
                 start.ArgumentList.Add("-new-window");
-                start.ArgumentList.Add("-page");
-                start.ArgumentList.Add(page.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (result.Unit.Page is int page)
+                {
+                    start.ArgumentList.Add("-page");
+                    start.ArgumentList.Add(page.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
                 start.ArgumentList.Add(result.Path);
                 string? error = TryStart(start);
                 if (error is null) return (true, $"An SumatraPDF übergeben · {location}");

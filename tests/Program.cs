@@ -114,6 +114,11 @@ try
     File.WriteAllText(selectedPath, "");
     var selectedResult = new Result(selectedPath, "pdf", DateTime.UtcNow,
         new Unit("", Page: 3), new Hit(0, 0, ["Zertifikat"], 0), "Das Zertifikat");
+    var metadataResult = selectedResult with { Unit = new Unit("", Field: "filename") };
+    Require(Picker.ResolveOpenTarget([metadataResult, selectedResult], metadataResult) == selectedResult,
+        "Dateinamentreffer springt zum verfügbaren Inhaltstreffer im selben PDF");
+    Require(Picker.ResolveOpenTarget([metadataResult, selectedResult with { Path = fakeViewer }], metadataResult) == metadataResult,
+        "Treffer in einem anderen PDF bestimmt keine Zielseite");
     string? previousViewer = Environment.GetEnvironmentVariable("WRG_SUMATRA_PATH");
     try
     {
@@ -123,6 +128,11 @@ try
         Require(calls.Single().FileName == fakeViewer &&
             calls[0].ArgumentList.SequenceEqual(["-new-window", "-page", "3", selectedPath]) &&
             !calls[0].UseShellExecute, "SumatraPDF-Seitensprung mit vollständigem Pfad");
+        calls.Clear();
+        var metadataOpen = Picker.Open(metadataResult, start => { calls.Add(start); return true; });
+        Require(metadataOpen.Success && metadataOpen.Message.Contains("ohne Seitenzahl") &&
+            calls.Single().ArgumentList.SequenceEqual(["-new-window", selectedPath]),
+            "PDF-Metadatentreffer ohne Inhalt öffnet ohne Seitenargument");
         calls.Clear();
         Require(Picker.Open(selectedResult, start => { calls.Add(start); return start.UseShellExecute; }).Success,
             "Rückfall auf Dateizuordnung");

@@ -15,7 +15,7 @@ In der Trefferliste wählen Auf/Ab den Treffer, Enter öffnet das Original und E
 
 ## Build und Prüfung
 
-Für den Build werden das in `global.json` fixierte .NET SDK, PowerShell 7, 7-Zip mit NSIS-Unterstützung sowie Internetzugang zum Abruf der festgelegten Komponenten benötigt.
+Für den Build werden das in `global.json` fixierte .NET SDK, Windows PowerShell 5.1 oder PowerShell 7, 7-Zip mit NSIS-Unterstützung sowie Internetzugang zum Abruf der festgelegten Komponenten benötigt.
 
 ```powershell
 dotnet build src -c Release

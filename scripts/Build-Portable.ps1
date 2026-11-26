@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 5.1
 param([string]$SevenZip = '7z')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -10,7 +10,7 @@ $package = Join-Path $temp 'wrg-win-x64'
 
 function Get-PinnedFile($Uri, $Name, $Hash) {
     $path = Join-Path $temp $Name
-    Invoke-WebRequest -Uri $Uri -OutFile $path
+    Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $path
     if ((Get-FileHash -Algorithm SHA256 -Path $path).Hash -ne $Hash) {
         throw "SHA-256-Prüfung fehlgeschlagen für $Name."
     }
@@ -47,7 +47,7 @@ try {
     New-Item -ItemType Directory -Path $tessdata | Out-Null
     Copy-Item -LiteralPath $deu, $eng -Destination $tessdata
     Copy-Item -LiteralPath 'README.md', 'LIZENZHINWEISE.md', 'JSONL.md', 'PLAN.md' -Destination $package
-    if ($IsWindows) {
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         dotnet run --project tests -c Release -- (Join-Path $package 'wrg.exe') tests/fixtures/gemischt.pdf
         if ($LASTEXITCODE -ne 0) { throw 'Der Windows-Pakettest ist fehlgeschlagen.' }
     }

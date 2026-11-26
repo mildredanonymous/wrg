@@ -13,11 +13,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Portables Paket bauen und testen
-        shell: pwsh
-        run: ./scripts/Build-Portable.ps1 -SevenZip "$env:ProgramFiles\7-Zip\7z.exe"
-      - name: Windows PowerShell 5.1 prüfen
+      - name: Portables Paket mit Windows PowerShell 5.1 bauen und testen
         shell: powershell
+        run: ./scripts/Build-Portable.ps1 -SevenZip "$env:ProgramFiles\7-Zip\7z.exe"
+      - name: Entpacktes Paket mit PowerShell 7 prüfen
+        shell: pwsh
         run: |
           Expand-Archive -Path artifacts/wrg-win-x64.zip -DestinationPath artifacts/powershell-51
           & ./artifacts/powershell-51/wrg-win-x64/wrg.exe --help

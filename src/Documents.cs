@@ -14,10 +14,10 @@ static partial class Documents
     private static readonly XNamespace Word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
     public static IEnumerable<Unit> Read(string path, string type, Options options,
-        Action<DocumentIssue> issue, Action excludePage, Action pageFinished, CancellationToken cancellation) => type switch
+        Action<DocumentIssue> issue, Action excludePage, Action pageFinished, Action<int> pageStarted, CancellationToken cancellation) => type switch
     {
-        "docx" => Docx(path, cancellation),
-        "pdf" => Pdf(path, options, issue, excludePage, pageFinished, cancellation),
+        "docx" => Docx(path, options.Field, cancellation),
+        "pdf" => Pdf(path, options, issue, excludePage, pageFinished, pageStarted, cancellation),
         _ when options.Field is not ("all" or "content") => [],
         _ => Text(path, type == "md", cancellation)
     };
@@ -107,16 +107,21 @@ static partial class Documents
         if (paragraph.Length > 0) yield return new Unit(paragraph.ToString(), Line: first, Section: section);
     }
 
-    private static IEnumerable<Unit> Docx(string path, CancellationToken cancellation)
+    private static IEnumerable<Unit> Docx(string path, string scope, CancellationToken cancellation)
     {
         using var archive = ZipFile.OpenRead(path);
         if (archive.Entries.Count > 10000 || archive.Entries.Sum(entry => (decimal)entry.Length) > 128 * 1024 * 1024)
             throw new InvalidDataException("Entpacktes DOCX überschreitet das Grössen- oder Eintragslimit.");
-        XDocument? core = ReadXml(archive.GetEntry("docProps/core.xml"));
-        XNamespace dc = "http://purl.org/dc/elements/1.1/";
-        foreach (var (field, name) in new[] { ("title", dc + "title"), ("author", dc + "creator") })
-            if (core?.Root?.Element(name)?.Value is { Length: > 0 } value)
-                yield return new Unit(value, field, "metadata");
+        if (scope != "content")
+        {
+            XDocument? core = ReadXml(archive.GetEntry("docProps/core.xml"));
+            XNamespace dc = "http://purl.org/dc/elements/1.1/";
+            foreach (var (field, name) in new[] { ("title", dc + "title"), ("author", dc + "creator") })
+                if ((scope == "all" || scope == field) &&
+                    core?.Root?.Element(name)?.Value is { Length: > 0 } value)
+                    yield return new Unit(value, field, "metadata");
+        }
+        if (scope is not ("all" or "content")) yield break;
 
         XElement body = ReadXml(archive.GetEntry("word/document.xml"))?.Root?.Element(Word + "body")
             ?? throw new InvalidDataException("DOCX-Haupttext fehlt.");

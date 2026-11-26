@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 static partial class Documents
 {
     private static IEnumerable<Unit> Pdf(string path, Options options, Action<DocumentIssue> issue,
-        Action excludePage, Action pageFinished, CancellationToken cancellation)
+        Action excludePage, Action pageFinished, Action<int> pageStarted, CancellationToken cancellation)
     {
         ProcessResult info;
         try { info = RunTool("pdfinfo", ["-enc", "UTF-8", path], 20, cancellation); }
@@ -23,10 +23,9 @@ static partial class Documents
             yield break;
         }
         string[] lines = info.Text.Split('\n');
-        if (info.Error.Contains("Incorrect password", StringComparison.OrdinalIgnoreCase) ||
-            lines.Any(line => Regex.IsMatch(line, @"^Encrypted:\s+yes\b")))
+        if (info.Code != 0 && info.Error.Contains("Incorrect password", StringComparison.OrdinalIgnoreCase))
         {
-            issue(new("pdf_locked", "PDF ist passwortgeschützt oder verschlüsselt."));
+            issue(new("pdf_locked", "PDF verlangt zum Öffnen ein Passwort."));
             yield break;
         }
         string? count = Property("Pages");
@@ -49,6 +48,7 @@ static partial class Documents
                 issue(new("parse_failed", "PDF überschreitet das Limit von 10’000 verarbeiteten Seiten."));
                 yield break;
             }
+            pageStarted(page);
             foreach (Unit unit in PdfPage(path, page, options, issue, excludePage, cancellation))
                 yield return unit;
             pageFinished();

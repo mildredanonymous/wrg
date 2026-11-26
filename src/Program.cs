@@ -101,6 +101,18 @@ sealed class Output(bool json)
         if (json) Write("start", new { query = options.Query, paths = options.Paths, mode = options.Mode });
     }
 
+    private long? lastProgress;
+
+    public void Progress(string path, int? page = null)
+    {
+        if (json || Console.IsErrorRedirected) return;
+        long now = Environment.TickCount64;
+        if (lastProgress is long last && now - last < 3000) return;
+        lastProgress = now;
+        string position = page is int number ? $" · Seite {number}" : "";
+        Console.Error.WriteLine(Clean($"Suche läuft · {Searched} Dateien geprüft · {Path.GetFileName(path)}{position}"));
+    }
+
     public void Match(Result result)
     {
         Matches++;
@@ -330,6 +342,7 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
                 if (explicitPath) output.CheckedInput = true;
                 return;
             }
+            output.Progress(path);
             Result? pendingPage = null;
             void FlushPage()
             {
@@ -369,7 +382,8 @@ sealed class Scanner(Options options, Output output, CancellationToken cancellat
             {
                 gap = true;
                 Report(issue.Code, issue.Message, path, issue.Page);
-            }, () => { output.PagesExcluded++; excludedPage = true; }, FlushPage, cancellation))
+            }, () => { output.PagesExcluded++; excludedPage = true; }, FlushPage,
+                page => output.Progress(path, page), cancellation))
                 Check(unit);
             if (!gap && !excludedPage && options.Field is "all" or "content") checkedUnit = true;
         }

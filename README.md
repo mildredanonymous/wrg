@@ -13,6 +13,10 @@ Mehrere Suchbegriffe stehen in einem PowerShell-Argument. Standardmässig müsse
 
 In der Trefferliste wählen Auf/Ab den Treffer, Enter öffnet das Original und Esc beendet die Auswahl. Für einen PDF-Seitensprung wird `SumatraPDF.exe` auf `PATH` oder über `WRG_SUMATRA_PATH` gefunden. Die Windows-Dateizuordnung ist der Rückfallweg.
 
+## In grossen Ordnern suchen
+
+`wrg` liest die Dateien bei jeder Suche direkt. Bei einer Autorensuche in Word-Dokumenten spart `--type docx --field author --exact` das Lesen der Dokumenttexte und der PDFs. Für eine Inhaltssuche ohne Scan-Erkennung lässt sich `--no-ocr` verwenden. Die sortierte Textausgabe erscheint nach der Suche, während die Fortschrittsmeldungen auf stderr stehen. Mit `--format jsonl` werden die Treffer während der Suche ausgegeben.
+
 ## Build und Prüfung
 
 Für den Build werden das in `global.json` fixierte .NET SDK, Windows PowerShell 5.1 oder PowerShell 7, 7-Zip mit NSIS-Unterstützung sowie Internetzugang zum Abruf der festgelegten Komponenten benötigt.

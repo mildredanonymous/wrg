@@ -27,7 +27,7 @@ JSONL hat keine globale Trefferrangfolge. Bei frühen CLI-Fehlern stehen ein lee
 | `unsupported_type` | Explizite Datei mit unbekanntem Typ |
 | `unsupported_location` | Netzwerkpfad, Gerätepfad, Verknüpfung oder Onlineplatzhalter |
 | `decode_failed` | Ungültige Zeichenkodierung |
-| `pdf_locked` | PDF verschlüsselt oder passwortgeschützt |
+| `pdf_locked` | PDF verlangt zum Öffnen ein Passwort |
 | `pdf_unavailable` | PDF-Komponente fehlt |
 | `parse_failed` | Dokument oder Seite konnte nicht verarbeitet werden, einschliesslich Ressourcenlimits |
 | `ocr_unavailable` | OCR-Komponente oder Sprachdaten fehlen oder das OCR-Programm meldet einen Fehler |
